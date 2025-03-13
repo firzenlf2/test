@@ -1,4 +1,4 @@
-# main.py (ChatGPT LINE Bot)
+# main.py
 
 from fastapi import FastAPI, Request
 from linebot import LineBotApi, WebhookHandler
@@ -6,52 +6,59 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage
 import openai
 import os
 
-# FastAPI app
+# ✅ Initialize FastAPI
 app = FastAPI()
 
-# LINE credentials (for ChatGPTLine)
+# ✅ LINE API credentials
 line_bot_api = LineBotApi(os.getenv('LINE_CHANNEL_ACCESS_TOKEN'))
 handler = WebhookHandler(os.getenv('LINE_CHANNEL_SECRET'))
 
-# OpenAI API Key
+# ✅ OpenAI API Key
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# Health check (Render ping, keep alive)
+# ✅ Health check endpoint
 @app.get("/")
 def read_root():
-    return {"status": "ChatGPT Bot is running"}
+    return {"status": "running"}
 
-# LINE webhook endpoint
+# ✅ Webhook for LINE
 @app.post("/webhook")
 async def webhook(request: Request):
     body = await request.body()
-    signature = request.headers['X-Line-Signature']
-    handler.handle(body.decode('utf-8'), signature)
-    return "OK"
+    signature = request.headers.get('X-Line-Signature')
 
-# LINE message handler
+    try:
+        handler.handle(body.decode('utf-8'), signature)
+    except Exception as e:
+        print(f"LINE Webhook Error: {e}")
+        return "Error", 400
+
+    return "OK", 200
+
+# ✅ Handle LINE Message Event
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    user_text = event.message.text
-    reply = chatgpt_response(user_text)  # Get ChatGPT response
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=reply)
-    )
+    user_message = event.message.text
 
-# ChatGPT API call
-def chatgpt_response(prompt: str) -> str:
     try:
+        # Call ChatGPT (gpt-3.5-turbo)
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",  # You can change to gpt-4o if needed
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": user_message}
             ],
-            max_tokens=300,
-            temperature=0.3
+            max_tokens=500,
+            temperature=0.7
         )
-        return response['choices'][0]['message']['content'].strip()
+
+        reply_text = response['choices'][0]['message']['content'].strip()
+
     except Exception as e:
-        print(f"OpenAI Error: {e}")
-        return "Sorry, there was an error processing your request."
+        reply_text = f"ขออภัยค่ะ เกิดข้อผิดพลาด: {e}"
+
+    # ✅ Reply to LINE user
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text=reply_text)
+    )
